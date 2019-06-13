@@ -11,7 +11,7 @@ using Npgsql;
 using System.Diagnostics;
 using System.Xml;
 using System.Xml.Serialization;
-public class clsLibrary
+public static class clsLibrary
 /*
  * 
  */
@@ -413,9 +413,6 @@ public class clsLibrary
             return false;
         }
     }
-    /*
-
-     */
     public static bool execQuery_PGR_Update(string connection_string, string query, int commandTimeout_ = 0)
     /* Postgres
      * выполнение запроса на обновление данных
@@ -763,8 +760,6 @@ public class clsLibrary
             return false;
         }
     }
-
-
 
     public static List<string> execQuery_getListString(string connection_string, string query)
     //выполнение запроса c возвратом простого списка из текстовых строк
@@ -1252,6 +1247,69 @@ public class clsLibrary
     {
         throw new NotImplementedException();
     }
+    public static string getName_fromLibraies(ref List<clsConnections> link_connections, string nameField, string table, string fieldCode, string code)
+    //получение имени МО по коду
+    {
+        string result = null;
+        if (fieldCode != null)
+            result = clsLibrary.execQuery_getString(
+                 ref link_connections, null, "libraries",
+                 String.Format("SELECT top 1 {0} FROM {1} where {2} = '{3}'", nameField, table, fieldCode, code)
+                 );
+        if (result == null)
+            return string.Empty;
+        else
+            return result;
+    }
+    public static T DeserializeFrom<T>(this XmlElement xml) where T : new()
+    {
+        T xmlObject = new T();
+        try
+        {
+            XmlSerializer xmlSerializer = new XmlSerializer(typeof(T));
+            StringReader stringReader = new StringReader(xml.OuterXml);
+            xmlObject = (T)xmlSerializer.Deserialize(stringReader);
+        }
+        catch (Exception e)
+        {
+
+        }
+        return xmlObject;
+    }
+
+    public static string SerializeTo<T>(this T xmlObject, bool clear = false)
+    {
+        if (!clear)
+        {
+            XmlSerializer xmlSerializer = new XmlSerializer(typeof(T));
+            MemoryStream memoryStream = new MemoryStream();
+            XmlTextWriter xmlTextWriter = new XmlTextWriter(memoryStream, Encoding.UTF8);
+            xmlTextWriter.Formatting = Formatting.Indented;
+            xmlSerializer.Serialize(xmlTextWriter, xmlObject);
+            string output = Encoding.UTF8.GetString(memoryStream.ToArray());
+            string _byteOrderMarkUtf8 = Encoding.UTF8.GetString(Encoding.UTF8.GetPreamble());
+            if (output.StartsWith(_byteOrderMarkUtf8))
+            {
+                output = output.Remove(0, _byteOrderMarkUtf8.Length);
+            }
+            return output;
+        }
+        else
+        {
+            var emptyNamespaces = new XmlSerializerNamespaces(new[] { XmlQualifiedName.Empty });
+            var serializer = new XmlSerializer(xmlObject.GetType());
+            var settings = new XmlWriterSettings();
+            settings.Indent = true;
+            settings.OmitXmlDeclaration = true;
+            using (var stream = new StringWriter())
+            using (var writer = XmlWriter.Create(stream, settings))
+            {
+                serializer.Serialize(writer, xmlObject, emptyNamespaces);
+                return stream.ToString();
+            }
+        }
+    }
+
 }
 
 public static partial class XmlHelper
@@ -1300,6 +1358,9 @@ public static partial class XmlHelper
         }
         return xmlObject;
     }
+
+
+
     public static string SerializeClear<T>(this T xmlObject)
     //автор: Jon Nolen
     {
@@ -1353,4 +1414,6 @@ public static partial class XmlHelper
         }
         return outString;
     }
+
+
 }
