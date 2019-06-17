@@ -12,9 +12,6 @@ using System.Diagnostics;
 using System.Xml;
 using System.Xml.Serialization;
 public static class clsLibrary
-/*
- * 
- */
 {
     public class Id_row
     {
@@ -26,6 +23,9 @@ public static class clsLibrary
             row = row_;
         }
     }
+
+    //----- Other metods
+    #region other metods
     public static bool moveFile(string fileSource, string pathDestination, out string comments, bool rewrite = false)
     /* 
      * Перемещение файла в назначенную папку
@@ -107,7 +107,6 @@ public static class clsLibrary
             }
         }
     }
-
     public static string trancateLongString(string value, int count, bool before = false, string postfix = "...")
     //сокращение с заполнением до или после / удлинение пробелами строки
     {
@@ -122,14 +121,7 @@ public static class clsLibrary
         }
         return value;
     }
-    public static int import_FileInDB(
-        string file, //файл
-        int skip,   //пропускаемые строки
-        int count,  //столбцы
-        string query, //запрос
-        string connection, //строка соединения 
-        string db //база данных
-        )
+    public static int import_FileInDB(string file, int skip /*пропускаемые строки*/, int count /*столбцы*/, string query, string connection, string db)
     //импорт текстового файла в БД
     {
         int result = -1;
@@ -200,6 +192,540 @@ public static class clsLibrary
         return result;
 
     }
+    public static string InsertNameFile(List<clsConnections> link_connections, string reglament_connections, string database, string filename, string tableName, string command, string value, int attempt = 0/*попытка записать файл*/, int i = 0)
+    //Вносит имя файла в таблицу, должен быть уникальный
+    {
+        string id = "0";
+        string connection_name = "";
+        get_stringSplitPos(ref connection_name, reglament_connections, ';', i);
+        SqlConnection connection = new SqlConnection(link_connections.Find(x => x.name == connection_name).connectionString + ";database=" + database);
+        connection.Open();
+        SqlCommand sqlCommand = connection.CreateCommand();
+        sqlCommand.Connection = connection;
+        sqlCommand.CommandText = String.Format("Select top 1 id from {0} where FILENAME = '{1}'", tableName, filename);
+
+        SqlDataReader rdr = sqlCommand.ExecuteReader();
+        if (rdr.HasRows)
+        {
+            rdr.Read();
+            if (attempt != 0) id = rdr.GetString(0);
+            else id = "-1";
+        }
+        connection.Close();
+        if (id == "0")
+        {
+            if (execQuery_insert(ref link_connections, reglament_connections, database, command, value))
+                id = InsertNameFile(link_connections, reglament_connections, filename, database, tableName, command, value, ++attempt);
+            else id = "-1";
+        }
+        return id;
+    }
+    public static string string_ForDB(string value)
+    //формирует символьную строку для запсиси в БД
+    {
+        value = value.ToString().Replace("\"", string.Empty);
+        value = value.Trim();
+        if (value == string.Empty || value.Trim() == "")
+            return "null";
+        else
+            return value;
+    }
+    public static string string_Apostrophe(string value)
+    //оборачивает строку апострофами
+    {
+        if (value == null || value == "null" || value == string.Empty || value.Trim() == "")
+            return value;
+        else
+            return "'" + value + "'";
+    }
+    public static int InsertNameFile(string filename, int attempt = 0/*попытка записать файл*/)
+    //Вносит имя файла в таблицу, должен быть уникальный
+    {
+        int id = 0;
+        System.Data.SqlClient.SqlConnection sqlConnection1 = new System.Data.SqlClient.SqlConnection("uid=sa;pwd=Cvbqwe2!;server=server-r;database=SRZ3_00;");
+        System.Data.SqlClient.SqlCommand cmd1 = new System.Data.SqlClient.SqlCommand();
+        cmd1.CommandType = System.Data.CommandType.Text;
+        cmd1.Connection = sqlConnection1;
+        cmd1.CommandText = "Select top 1 id from MO_LOG where FNAME = '" + filename + "'";
+        sqlConnection1.Open();
+        SqlDataReader rdr = cmd1.ExecuteReader();
+        if (rdr.HasRows)
+        {
+            rdr.Read();
+            if (attempt != 0) id = rdr.GetInt32(0);
+            else id = -1;
+        }
+        sqlConnection1.Close();
+        if (id == 0)
+        {
+            execQuery_insert(
+                "uid=sa;pwd=Cvbqwe2!;server=server-r;database=SRZ3_00;",
+                "insert into MO_LOG (FNAME, DT, NREC, NERR) VALUES ",
+                string_Apostrophe(filename) + "," + string_Apostrophe(DateTime.Now.ToString("yyyyMMdd")) + ",0,0");
+            id = InsertNameFile(filename, ++attempt);
+        }
+        return id;
+    }
+    public static bool get_stringSplitPos(ref string result, string value, char splitSymbol, int position)
+    /* получение значения из строки с разделителями
+     */
+    {
+        try
+        {
+            result = value.Split(splitSymbol)[position];
+            return true;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+    public static string GetConnectionString_XLS(string dir)
+    {
+        Dictionary<string, string> props = new Dictionary<string, string>();
+        FileInfo _file = new FileInfo(dir);
+
+        // XLSX - Excel 2007, 2010, 2012, 2013
+        if (_file.Extension == ".xlsx")
+        {
+            props["Provider"] = "Microsoft.ACE.OLEDB.12.0;";
+            props["Extended Properties"] = "Excel 12.0 XML";
+            props["Data Source"] = _file.FullName;
+        }
+        else if (_file.Extension == ".xls")
+        {
+            props["Provider"] = "Microsoft.Jet.OLEDB.4.0";
+            props["Extended Properties"] = "Excel 8.0";
+            props["Data Source"] = dir;
+        }
+        else throw new Exception("Неизвестное расширение файла!");
+
+        StringBuilder sb = new StringBuilder();
+
+        foreach (KeyValuePair<string, string> prop in props)
+        {
+            sb.Append(prop.Key);
+            sb.Append('=');
+            sb.Append(prop.Value);
+            sb.Append(';');
+        }
+
+        return sb.ToString();
+    }
+    public static bool SendMail(string smtpServer, string from, string password, string mailto, string caption, string message, string attachFile = null)
+    {
+        try
+        {
+            MailMessage mail = new MailMessage();
+            mail.From = new MailAddress(from);
+            mail.To.Add(new MailAddress(mailto));
+            mail.Subject = caption;
+            mail.Body = message;
+            if (!string.IsNullOrEmpty(attachFile))
+                mail.Attachments.Add(new Attachment(attachFile));
+            SmtpClient client = new SmtpClient();
+            client.Host = smtpServer;
+            client.Port = 5025;
+            client.EnableSsl = false;
+            client.Credentials = new NetworkCredential(from.Split('@')[0], password);
+            client.DeliveryMethod = SmtpDeliveryMethod.Network;
+            client.Send(mail);
+            mail.Dispose();
+            return true;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+    public static void SaveXML_prt(Schemes_AOFOMS.sf_schema.FLK_P xml, string fn)
+    {
+        FileStream res = new System.IO.FileStream(fn, FileMode.Create);
+        System.Xml.Serialization.XmlSerializer writer =
+            new System.Xml.Serialization.XmlSerializer(typeof(Schemes_AOFOMS.sf_schema.FLK_P));
+        #region Перекодировка из UTF-8 в windows 1251
+        System.IO.StreamWriter file = new System.IO.StreamWriter(res, Encoding.GetEncoding(1251));
+        writer.Serialize(file, xml);
+        res.Close();
+        #endregion
+    }
+    public static void SaveXML_flk(Schemes_AOFOMS.sp_schema.FLK_P xml, string fn)
+    {
+        FileStream res = new System.IO.FileStream(fn, FileMode.Create);
+        System.Xml.Serialization.XmlSerializer writer =
+            new System.Xml.Serialization.XmlSerializer(typeof(Schemes_AOFOMS.sp_schema.FLK_P));
+        #region Перекодировка из UTF-8 в windows 1251
+        System.IO.StreamWriter file = new System.IO.StreamWriter(res, Encoding.GetEncoding(1251));
+        writer.Serialize(file, xml);
+        res.Close();
+        #endregion
+    }
+    public static void unpack(string mask, string source = @"u:\", string zipperPath = @"C:\Program Files\7-Zip\7z.exe")
+    {
+        bool find = false;
+        do
+        {
+            string[] files = null;
+            files = Directory.GetFiles(source, mask + ".ZIP");
+            files = files.Concat(Directory.GetFiles(source, mask + ".RAR")).ToArray();
+            files = files.Concat(Directory.GetFiles(source, mask + ".7z")).ToArray();
+            find = files.Count() > 0;
+            if (find)
+                foreach (string file in files)
+                {
+                    ProcessStartInfo processInfo;
+                    Process process;
+
+                    processInfo = new ProcessStartInfo(zipperPath,
+                                               @" e -y " + "\"" + file + "\"" + " -o" + "\"" + source + "\"");
+                    processInfo.CreateNoWindow = true;
+                    processInfo.UseShellExecute = false;
+                    // *** Redirect the output ***
+                    //processInfo.RedirectStandardError = false;
+                    //processInfo.RedirectStandardOutput = false;
+
+                    process = Process.Start(processInfo);
+                    //process.Threads.Sleep(1000);
+                    process.WaitForExit();
+
+                    int exitCode = process.ExitCode;
+                    process.Close();
+                    //MessageBox.Show("Swich " + exitCode.ToString());
+                    switch (exitCode)
+                    {
+                        case 0:
+                        case 1:
+                        default:
+                            File.Delete(file);
+                            break;
+                    }
+                }
+        }
+        while (find);
+    }
+
+    public static bool moveFile_byPrefix(string file, string prefix)
+    //перемещение файла в папку по префикусу, определяется по месту файла
+    {
+        try
+        {
+            string destination = Path.Combine(Path.GetDirectoryName(file), prefix);
+            System.IO.Directory.CreateDirectory(destination);
+            File.Copy(file, Path.Combine(destination, Path.GetFileName(file)), true);
+            File.Delete(file);
+            return true;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+    public static bool getTeg_HEADER(string filename, ref XmlDocument HEADER, ref string version)
+    {
+        try
+        {
+            using (FileStream fstream = File.OpenRead(filename))
+            {
+                byte[] array = new byte[2000/*fstream.Length*/];
+                fstream.Read(array, 0, array.Length);
+                //string textFromFile = Regex.Replace(System.Text.Encoding.Default.GetString(array), @"[ ]", ""); 
+                string textFromFile = System.Text.Encoding.Default.GetString(array);
+                int header_teg = textFromFile.IndexOf("<HEADER"); int header_teg_close = textFromFile.IndexOf("</HEADER>");
+                if (header_teg != -1 && header_teg_close != -1)
+                    HEADER.LoadXml(textFromFile.Substring(header_teg, header_teg_close - header_teg + 9));
+                version = (HEADER.GetElementsByTagName("VERSION")[0]).InnerText;
+            }
+            return true;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+    public static string getName_fromLibraies(ref List<clsConnections> link_connections, string nameField, string table, string fieldCode, string code)
+    //получение имени МО по коду
+    {
+        string result = null;
+        if (fieldCode != null)
+            result = clsLibrary.execQuery_getString(
+                 ref link_connections, null, "libraries",
+                 String.Format("SELECT top 1 {0} FROM {1} where {2} = '{3}'", nameField, table, fieldCode, code)
+                 );
+        if (result == null)
+            return string.Empty;
+        else
+            return result;
+    }
+    public static T DeserializeFrom<T>(this XmlElement xml) where T : new()
+    {
+        T xmlObject = new T();
+        try
+        {
+            XmlSerializer xmlSerializer = new XmlSerializer(typeof(T));
+            StringReader stringReader = new StringReader(xml.OuterXml);
+            xmlObject = (T)xmlSerializer.Deserialize(stringReader);
+        }
+        catch (Exception e)
+        {
+
+        }
+        return xmlObject;
+    }
+    public static string SerializeTo<T>(this T xmlObject, bool clear = false)
+    {
+        if (!clear)
+        {
+            XmlSerializer xmlSerializer = new XmlSerializer(typeof(T));
+            MemoryStream memoryStream = new MemoryStream();
+            XmlTextWriter xmlTextWriter = new XmlTextWriter(memoryStream, Encoding.UTF8);
+            xmlTextWriter.Formatting = Formatting.Indented;
+            xmlSerializer.Serialize(xmlTextWriter, xmlObject);
+            string output = Encoding.UTF8.GetString(memoryStream.ToArray());
+            string _byteOrderMarkUtf8 = Encoding.UTF8.GetString(Encoding.UTF8.GetPreamble());
+            if (output.StartsWith(_byteOrderMarkUtf8))
+            {
+                output = output.Remove(0, _byteOrderMarkUtf8.Length);
+            }
+            return output;
+        }
+        else
+        {
+            var emptyNamespaces = new XmlSerializerNamespaces(new[] { XmlQualifiedName.Empty });
+            var serializer = new XmlSerializer(xmlObject.GetType());
+            var settings = new XmlWriterSettings();
+            settings.Indent = true;
+            settings.OmitXmlDeclaration = true;
+            using (var stream = new StringWriter())
+            using (var writer = XmlWriter.Create(stream, settings))
+            {
+                serializer.Serialize(writer, xmlObject, emptyNamespaces);
+                return stream.ToString();
+            }
+        }
+    }
+    #endregion other metods
+
+    //------ MSSQL region
+    #region mssql queries
+    internal static List<string> execQuery_getListString(List<clsConnections> link_connections, ref string reglament_connections, string p1, string p2)
+    {
+        throw new NotImplementedException();
+    }
+    public static string execQuery_NewRequest(string connection_string, string filename, string mnemonics, string schemaname, string header)
+    /* выполнение запроса c возвратом первого значения
+     * при ошибке возвращает -1
+     */
+    {
+        string result = "-1"; //ошибка вставки
+        try
+        {
+            //0 - не вставлена запись, guid - успешно
+            SqlConnection connection = new SqlConnection(connection_string);
+            SqlCommand command = new SqlCommand();
+            command.CommandType = CommandType.Text;
+            command.Connection = connection;
+            command.CommandText = String.Format("EXEC eir.dbo.insert_newRequest '{0}','{1}','{2}','{3}'", filename, mnemonics, schemaname, header);
+            connection.Open();
+            SqlDataReader reader = command.ExecuteReader();
+            reader.Read();
+            result = reader[0].ToString();
+            connection.Close();
+        }
+        catch
+        {
+        }
+        return result;
+    }
+    public static List<string> execQuery_getListString(string connection_string, string query)
+    //выполнение запроса c возвратом простого списка из текстовых строк
+    {
+        List<string> result = new List<string>();
+        try
+        {
+            SqlConnection connection = new SqlConnection(connection_string);
+            SqlCommand command = new SqlCommand();
+            command.CommandType = CommandType.Text;
+            command.Connection = connection;
+            connection.Open();
+            command.CommandText = query;
+            SqlDataReader reader = command.ExecuteReader();
+            while (reader.Read())
+            {
+                result.Add(reader[0].ToString());
+            }
+            connection.Close();
+        }
+        catch
+        {
+            result = null;
+        }
+        return result;
+    }
+    public static List<string> execQuery_getListString(ref List<clsConnections> link_connections, ref string reglament_connections, string database, string query, int i = 0)
+    //выполнение запроса c возвратом простого списка из текстовых строк
+    {
+        List<string> result = new List<string>();
+        try
+        {
+            string connection_name = "";
+            get_stringSplitPos(ref connection_name, reglament_connections, ';', i);
+            SqlConnection connection = new SqlConnection(link_connections.Find(x => x.name == connection_name).connectionString + ";database=" + database);
+            SqlCommand command = new SqlCommand();
+            command.CommandType = CommandType.Text;
+            command.Connection = connection;
+            connection.Open();
+            command.CommandText = query;
+            SqlDataReader reader = command.ExecuteReader();
+            while (reader.Read())
+            {
+                result.Add(reader[0].ToString());
+            }
+            connection.Close();
+        }
+        catch (Exception e)
+        {
+            result = null;
+        }
+        return result;
+    }
+    public static bool execQuery_getListString(ref List<string[]> list, ref List<clsConnections> link_connections, string reglament_connections, string database, string query, int commandTimeout_ = 0, string symbol = "", int i = 0)
+    //выполнение запроса c возвратом простого списка из массива текстовых строк
+    {
+        try
+        {
+            string connection_name = "";
+            get_stringSplitPos(ref connection_name, reglament_connections, ';', i);
+            SqlConnection connection = new SqlConnection(link_connections.Find(x => x.name == connection_name).connectionString + ";database=" + database);
+            SqlCommand command = new SqlCommand();
+            command.CommandType = CommandType.Text;
+            command.Connection = connection;
+            connection.Open();
+            command.CommandText = query;
+            SqlDataReader reader = command.ExecuteReader();
+            if (reader.HasRows)
+            {
+                reader.Read();
+                do
+                {
+                    string[] row = new string[reader.FieldCount];
+                    for (int id = 0; id < row.Length; id++)
+                    {
+                        row[id] = symbol + reader[id].ToString() + symbol;
+                    }
+                    list.Add(row);
+                }
+                while (reader.Read());
+            }
+            connection.Close();
+            return true;
+        }
+        catch (Exception e)
+        {
+            string mes = e.Message;
+            return false;
+        }
+    }
+    public static bool ExecQurey_GetListStrings(string connection_string, string query, ref List<string[]> list, int commandTimeout_ = 0)
+    {
+        try
+        {
+            SqlConnection connection = new SqlConnection(connection_string);
+            SqlCommand command = new SqlCommand();
+            command.CommandType = CommandType.Text;
+            command.CommandTimeout = commandTimeout_;
+            command.Connection = connection;
+            connection.Open();
+            command.CommandText = query;
+            SqlDataReader reader = command.ExecuteReader();
+
+            if (reader.Read())
+                do
+                {
+                    string[] row = new string[reader.FieldCount];
+                    for (int i = 0; i < row.Length; i++)
+                    {
+                        row[i] = reader[i].ToString();
+                    }
+                    list.Add(row);
+                }
+                while (reader.Read());
+            connection.Close();
+            return true;
+        }
+        catch (Exception s)
+        {
+            //MessageBox.Show(s.ToString());
+            return false;
+        }
+    }
+    public static bool ExecQurey_GetListStrings(List<clsConnections> link_connections, string reglament_connections, string database, string query, ref List<string[]> list, int commandTimeout_ = 0, int i = 0)
+    {
+        try
+        {
+            string connection_name = "";
+            if (reglament_connections == null || reglament_connections == String.Empty)
+                connection_name = database;
+            else
+                get_stringSplitPos(ref connection_name, reglament_connections, ';', i);
+            SqlConnection connection = new SqlConnection(link_connections.Find(x => x.name == connection_name).connectionString + ";database=" + database);
+            SqlCommand command = new SqlCommand();
+            command.CommandType = CommandType.Text;
+            command.CommandTimeout = commandTimeout_;
+            command.Connection = connection;
+            connection.Open();
+            command.CommandText = query;
+            SqlDataReader reader = command.ExecuteReader();
+
+            if (reader.Read())
+                do
+                {
+                    string[] row = new string[reader.FieldCount];
+                    for (int col = 0; col < row.Length; col++)
+                    {
+                        row[col] = reader[col].ToString();
+                    }
+                    list.Add(row);
+                }
+                while (reader.Read());
+            connection.Close();
+            return true;
+        }
+        catch (Exception s)
+        {
+            //MessageBox.Show(s.ToString());
+            return false;
+        }
+    }
+    public static bool ExecQurey_GetTable(string connection_string, string query, ref DataTable table, int commandTimeout_ = 0)
+    {
+        try
+        {
+            SqlConnection connection = new SqlConnection(connection_string);
+            SqlCommand command = new SqlCommand();
+            command.CommandType = CommandType.Text;
+            command.CommandTimeout = commandTimeout_;
+            command.Connection = connection;
+            connection.Open();
+            command.CommandText = query;
+            SqlDataReader reader = command.ExecuteReader();
+            DataRow row = null;
+            while (reader.Read())
+            {
+                row = table.NewRow();
+                for (int i = 0; i < table.Columns.Count; i++)
+                {
+                    row[i] = reader[i].ToString();
+                }
+                table.Rows.Add(row);
+            }
+            connection.Close();
+            return true;
+        }
+        catch
+        {
+            return false;
+        }
+    }
     public static bool execQuery_insert(string connection_string, string query, string value)
     //выполнение запроса на вставку одной записи
     {
@@ -221,7 +747,6 @@ public static class clsLibrary
             return false;
         }
     }
-
     public static bool execQuery_insert(ref List<clsConnections> link_connections, string reglament_connections, string database, string query, string value, int i = 0)
     //выполнение запроса на вставку одной записи
     {
@@ -248,7 +773,6 @@ public static class clsLibrary
             return false;
         }
     }
-
     public static List<int> execQuery_insertList_list(string connection_string, string query, List<string> list)
     //выполнение запроса на вставку данных из списка
     //возвращает null при ошибке подключения
@@ -413,27 +937,6 @@ public static class clsLibrary
             return false;
         }
     }
-    public static bool execQuery_PGR_Update(string connection_string, string query, int commandTimeout_ = 0)
-    /* Postgres
-     * выполнение запроса на обновление данных
-     */
-    {
-        try
-        {
-            Npgsql.NpgsqlConnection connection = new NpgsqlConnection(connection_string);
-            NpgsqlCommand command = new NpgsqlCommand(query, connection);
-            command.CommandTimeout = commandTimeout_;
-            connection.Open();
-            command.ExecuteNonQuery();
-            connection.Close();
-            return true;
-        }
-        catch
-        {
-            return false;
-        }
-    }
-
     public static bool execQuery_updateListString(ref List<string> list, ref List<clsConnections> link_connections, string reglament_connections, int number, string database, int limit_transaction = 1, int commandTimeout_ = 0)
     /* MSSQL
      * Обновление данных списком запросов
@@ -480,53 +983,6 @@ public static class clsLibrary
         }
         return result;
     }
-
-    public static bool execQuery_PGR_updateList(string connection_string, List<string> list, int limit_transaction = 1, int commandTimeout_ = 0)
-    /* Postgres
-     * Обновление данных списком запросов
-     * В списке получаем готовые запросы на обновление
-     */
-    {
-        bool result = false;
-
-        int count = 0;
-        string values = string.Empty;
-        int count_row = list.Count();
-
-        if (list == null || list.Count() == 0) return result;
-        try
-        {
-            Npgsql.NpgsqlConnection connection = new NpgsqlConnection(connection_string);
-            connection.Open();
-            NpgsqlCommand sqlCommand = connection.CreateCommand();
-            NpgsqlTransaction sqlTransaction = connection.BeginTransaction(IsolationLevel.Chaos);
-            sqlCommand.Connection = connection;
-            sqlCommand.CommandTimeout = commandTimeout_;
-            sqlCommand.Transaction = sqlTransaction;
-
-            for (int row = 0; row < count_row; ++row)
-            {
-                ++count;
-                values += list[row] + ";";
-                if (count == limit_transaction || row + 1 == count_row)
-                {
-                    sqlCommand.CommandText = values;
-                    sqlCommand.ExecuteNonQuery();
-                    values = string.Empty;
-                    count = 0;
-                }
-            }
-            sqlTransaction.Commit();
-            connection.Close();
-            result = true;
-        }
-        catch (Exception ex)
-        {
-            string str = ex.Message;
-        }
-        return result;
-    }
-
     public static int execQuery_getInt(string connection_string, string query, int commandTimeout_ = 0)
     /* выполнение запроса c возвратом первого значения
      * при ошибке возвращает -1
@@ -581,7 +1037,6 @@ public static class clsLibrary
         }
         return result;
     }
-
     public static string execQuery_getString(ref List<clsConnections> link_connections, string reglament_connections, string database, string query, int i = 0, int commandTimeout_ = 0)
     /* выполнение запроса c возвратом первого значения
      * при ошибке возвращает -1
@@ -610,7 +1065,6 @@ public static class clsLibrary
         catch { }
         return result;
     }
-
     public static string execQuery_getString(string connection_string, string query, int commandTimeout_ = 0)
     /* 
      */
@@ -631,6 +1085,94 @@ public static class clsLibrary
             connection.Close();
         }
         catch { }
+        return result;
+    }
+    #endregion mssql queries
+
+    //----- Postgres region
+    #region postgres queries
+    public static string execQuery_PGR_getString(string connection_string, string query, int commandTimeout_ = 0)
+    {
+        string result = null;
+        try
+        {
+            NpgsqlConnection connection = new NpgsqlConnection(connection_string);
+            NpgsqlCommand command = new NpgsqlCommand(query, connection);
+            command.CommandType = CommandType.Text;
+            command.Connection = connection;
+            command.CommandTimeout = commandTimeout_;
+            connection.Open();
+            NpgsqlDataReader reader = command.ExecuteReader();
+            reader.Read();
+            result = reader[0].ToString();
+            connection.Close();
+        }
+        catch { }
+        return result;
+    }
+    public static bool execQuery_PGR_Update(string connection_string, string query, int commandTimeout_ = 0)
+    /* Postgres
+     * выполнение запроса на обновление данных
+     */
+    {
+        try
+        {
+            NpgsqlConnection connection = new NpgsqlConnection(connection_string);
+            NpgsqlCommand command = new NpgsqlCommand(query, connection);
+            command.CommandTimeout = commandTimeout_;
+            connection.Open();
+            command.ExecuteNonQuery();
+            connection.Close();
+            return true;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+    public static bool execQuery_PGR_updateList(string connection_string, List<string> list, int limit_transaction = 1, int commandTimeout_ = 0)
+    /* Postgres
+     * Обновление данных списком запросов
+     * В списке получаем готовые запросы на обновление
+     */
+    {
+        bool result = false;
+
+        int count = 0;
+        string values = string.Empty;
+        int count_row = list.Count();
+
+        if (list == null || list.Count() == 0) return result;
+        try
+        {
+            Npgsql.NpgsqlConnection connection = new NpgsqlConnection(connection_string);
+            connection.Open();
+            NpgsqlCommand sqlCommand = connection.CreateCommand();
+            NpgsqlTransaction sqlTransaction = connection.BeginTransaction(IsolationLevel.Chaos);
+            sqlCommand.Connection = connection;
+            sqlCommand.CommandTimeout = commandTimeout_;
+            sqlCommand.Transaction = sqlTransaction;
+
+            for (int row = 0; row < count_row; ++row)
+            {
+                ++count;
+                values += list[row] + ";";
+                if (count == limit_transaction || row + 1 == count_row)
+                {
+                    sqlCommand.CommandText = values;
+                    sqlCommand.ExecuteNonQuery();
+                    values = string.Empty;
+                    count = 0;
+                }
+            }
+            sqlTransaction.Commit();
+            connection.Close();
+            result = true;
+        }
+        catch (Exception ex)
+        {
+            string str = ex.Message;
+        }
         return result;
     }
 
@@ -760,556 +1302,7 @@ public static class clsLibrary
             return false;
         }
     }
-
-    public static List<string> execQuery_getListString(string connection_string, string query)
-    //выполнение запроса c возвратом простого списка из текстовых строк
-    {
-        List<string> result = new List<string>();
-        try
-        {
-            SqlConnection connection = new SqlConnection(connection_string);
-            SqlCommand command = new SqlCommand();
-            command.CommandType = CommandType.Text;
-            command.Connection = connection;
-            connection.Open();
-            command.CommandText = query;
-            SqlDataReader reader = command.ExecuteReader();
-            while (reader.Read())
-            {
-                result.Add(reader[0].ToString());
-            }
-            connection.Close();
-        }
-        catch
-        {
-            result = null;
-        }
-        return result;
-    }
-
-    public static List<string> execQuery_getListString(ref List<clsConnections> link_connections, ref string reglament_connections, string database, string query, int i = 0)
-    //выполнение запроса c возвратом простого списка из текстовых строк
-    {
-        List<string> result = new List<string>();
-        try
-        {
-            string connection_name = "";
-            get_stringSplitPos(ref connection_name, reglament_connections, ';', i);
-            SqlConnection connection = new SqlConnection(link_connections.Find(x => x.name == connection_name).connectionString + ";database=" + database);
-            SqlCommand command = new SqlCommand();
-            command.CommandType = CommandType.Text;
-            command.Connection = connection;
-            connection.Open();
-            command.CommandText = query;
-            SqlDataReader reader = command.ExecuteReader();
-            while (reader.Read())
-            {
-                result.Add(reader[0].ToString());
-            }
-            connection.Close();
-        }
-        catch (Exception e)
-        {
-            result = null;
-        }
-        return result;
-    }
-
-    public static bool execQuery_getListString(ref List<string[]> list, ref List<clsConnections> link_connections, string reglament_connections, string database, string query, int commandTimeout_ = 0, string symbol = "", int i = 0)
-    //выполнение запроса c возвратом простого списка из массива текстовых строк
-    {
-        try
-        {
-            string connection_name = "";
-            get_stringSplitPos(ref connection_name, reglament_connections, ';', i);
-            SqlConnection connection = new SqlConnection(link_connections.Find(x => x.name == connection_name).connectionString + ";database=" + database);
-            SqlCommand command = new SqlCommand();
-            command.CommandType = CommandType.Text;
-            command.Connection = connection;
-            connection.Open();
-            command.CommandText = query;
-            SqlDataReader reader = command.ExecuteReader();
-            if (reader.HasRows)
-            {
-                reader.Read();
-                do
-                {
-                    string[] row = new string[reader.FieldCount];
-                    for (int id = 0; id < row.Length; id++)
-                    {
-                        row[id] = symbol + reader[id].ToString() + symbol;
-                    }
-                    list.Add(row);
-                }
-                while (reader.Read());
-            }
-            connection.Close();
-            return true;
-        }
-        catch (Exception e)
-        {
-            string mes = e.Message;
-            return false;
-        }
-    }
-    public static bool ExecQurey_GetListStrings(string connection_string, string query, ref List<string[]> list, int commandTimeout_ = 0)
-    {
-        try
-        {
-            SqlConnection connection = new SqlConnection(connection_string);
-            SqlCommand command = new SqlCommand();
-            command.CommandType = CommandType.Text;
-            command.CommandTimeout = commandTimeout_;
-            command.Connection = connection;
-            connection.Open();
-            command.CommandText = query;
-            SqlDataReader reader = command.ExecuteReader();
-
-            if (reader.Read())
-                do
-                {
-                    string[] row = new string[reader.FieldCount];
-                    for (int i = 0; i < row.Length; i++)
-                    {
-                        row[i] = reader[i].ToString();
-                    }
-                    list.Add(row);
-                }
-                while (reader.Read());
-            connection.Close();
-            return true;
-        }
-        catch (Exception s)
-        {
-            //MessageBox.Show(s.ToString());
-            return false;
-        }
-    }
-    public static bool ExecQurey_GetListStrings(List<clsConnections> link_connections, string reglament_connections, string database, string query, ref List<string[]> list, int commandTimeout_ = 0, int i = 0)
-    {
-        try
-        {
-            string connection_name = "";
-            if (reglament_connections == null || reglament_connections == String.Empty)
-                connection_name = database;
-            else
-                get_stringSplitPos(ref connection_name, reglament_connections, ';', i);
-            SqlConnection connection = new SqlConnection(link_connections.Find(x => x.name == connection_name).connectionString + ";database=" + database);
-            SqlCommand command = new SqlCommand();
-            command.CommandType = CommandType.Text;
-            command.CommandTimeout = commandTimeout_;
-            command.Connection = connection;
-            connection.Open();
-            command.CommandText = query;
-            SqlDataReader reader = command.ExecuteReader();
-
-            if (reader.Read())
-                do
-                {
-                    string[] row = new string[reader.FieldCount];
-                    for (int col = 0; col < row.Length; col++)
-                    {
-                        row[col] = reader[col].ToString();
-                    }
-                    list.Add(row);
-                }
-                while (reader.Read());
-            connection.Close();
-            return true;
-        }
-        catch (Exception s)
-        {
-            //MessageBox.Show(s.ToString());
-            return false;
-        }
-    }
-    public static string InsertNameFile(List<clsConnections> link_connections, string reglament_connections, string database, string filename, string tableName, string command, string value, int attempt = 0/*попытка записать файл*/, int i = 0)
-    //Вносит имя файла в таблицу, должен быть уникальный
-    {
-        string id = "0";
-        string connection_name = "";
-        get_stringSplitPos(ref connection_name, reglament_connections, ';', i);
-        SqlConnection connection = new SqlConnection(link_connections.Find(x => x.name == connection_name).connectionString + ";database=" + database);
-        connection.Open();
-        SqlCommand sqlCommand = connection.CreateCommand();
-        sqlCommand.Connection = connection;
-        sqlCommand.CommandText = String.Format("Select top 1 id from {0} where FILENAME = '{1}'", tableName, filename);
-
-        SqlDataReader rdr = sqlCommand.ExecuteReader();
-        if (rdr.HasRows)
-        {
-            rdr.Read();
-            if (attempt != 0) id = rdr.GetString(0);
-            else id = "-1";
-        }
-        connection.Close();
-        if (id == "0")
-        {
-            if (execQuery_insert(ref link_connections, reglament_connections, database, command, value))
-                id = InsertNameFile(link_connections, reglament_connections, filename, database, tableName, command, value, ++attempt);
-            else id = "-1";
-        }
-        return id;
-    }
-
-    public static string string_ForDB(string value)
-    //формирует символьную строку для запсиси в БД
-    {
-        value = value.ToString().Replace("\"", string.Empty);
-        value = value.Trim();
-        if (value == string.Empty || value.Trim() == "")
-            return "null";
-        else
-            return value;
-    }
-
-    public static string string_Apostrophe(string value)
-    //оборачивает строку апострофами
-    {
-        if (value == null || value == "null" || value == string.Empty || value.Trim() == "")
-            return value;
-        else
-            return "'" + value + "'";
-    }
-
-    public static int InsertNameFile(string filename, int attempt = 0/*попытка записать файл*/)
-    //Вносит имя файла в таблицу, должен быть уникальный
-    {
-        int id = 0;
-        System.Data.SqlClient.SqlConnection sqlConnection1 = new System.Data.SqlClient.SqlConnection("uid=sa;pwd=Cvbqwe2!;server=server-r;database=SRZ3_00;");
-        System.Data.SqlClient.SqlCommand cmd1 = new System.Data.SqlClient.SqlCommand();
-        cmd1.CommandType = System.Data.CommandType.Text;
-        cmd1.Connection = sqlConnection1;
-        cmd1.CommandText = "Select top 1 id from MO_LOG where FNAME = '" + filename + "'";
-        sqlConnection1.Open();
-        SqlDataReader rdr = cmd1.ExecuteReader();
-        if (rdr.HasRows)
-        {
-            rdr.Read();
-            if (attempt != 0) id = rdr.GetInt32(0);
-            else id = -1;
-        }
-        sqlConnection1.Close();
-        if (id == 0)
-        {
-            execQuery_insert(
-                "uid=sa;pwd=Cvbqwe2!;server=server-r;database=SRZ3_00;",
-                "insert into MO_LOG (FNAME, DT, NREC, NERR) VALUES ",
-                string_Apostrophe(filename) + "," + string_Apostrophe(DateTime.Now.ToString("yyyyMMdd")) + ",0,0");
-            id = InsertNameFile(filename, ++attempt);
-        }
-        return id;
-    }
-
-    public static bool ExecQurey_GetTable(string connection_string, string query, ref DataTable table, int commandTimeout_ = 0)
-    {
-        try
-        {
-            SqlConnection connection = new SqlConnection(connection_string);
-            SqlCommand command = new SqlCommand();
-            command.CommandType = CommandType.Text;
-            command.CommandTimeout = commandTimeout_;
-            command.Connection = connection;
-            connection.Open();
-            command.CommandText = query;
-            SqlDataReader reader = command.ExecuteReader();
-            DataRow row = null;
-            while (reader.Read())
-            {
-                row = table.NewRow();
-                for (int i = 0; i < table.Columns.Count; i++)
-                {
-                    row[i] = reader[i].ToString();
-                }
-                table.Rows.Add(row);
-            }
-            connection.Close();
-            return true;
-        }
-        catch
-        {
-            return false;
-        }
-    }
-
-    public static bool get_stringSplitPos(ref string result, string value, char splitSymbol, int position)
-    /* получение значения из строки с разделителями
-     */
-    {
-        try
-        {
-            result = value.Split(splitSymbol)[position];
-            return true;
-        }
-        catch
-        {
-            return false;
-        }
-    }
-
-    public static string GetConnectionString_XLS(string dir)
-    {
-        Dictionary<string, string> props = new Dictionary<string, string>();
-        FileInfo _file = new FileInfo(dir);
-
-        // XLSX - Excel 2007, 2010, 2012, 2013
-        if (_file.Extension == ".xlsx")
-        {
-            props["Provider"] = "Microsoft.ACE.OLEDB.12.0;";
-            props["Extended Properties"] = "Excel 12.0 XML";
-            props["Data Source"] = _file.FullName;
-        }
-        else if (_file.Extension == ".xls")
-        {
-            props["Provider"] = "Microsoft.Jet.OLEDB.4.0";
-            props["Extended Properties"] = "Excel 8.0";
-            props["Data Source"] = dir;
-        }
-        else throw new Exception("Неизвестное расширение файла!");
-
-        StringBuilder sb = new StringBuilder();
-
-        foreach (KeyValuePair<string, string> prop in props)
-        {
-            sb.Append(prop.Key);
-            sb.Append('=');
-            sb.Append(prop.Value);
-            sb.Append(';');
-        }
-
-        return sb.ToString();
-    }
-
-    public static bool SendMail(string smtpServer, string from, string password, string mailto, string caption, string message, string attachFile = null)
-    {
-        try
-        {
-            MailMessage mail = new MailMessage();
-            mail.From = new MailAddress(from);
-            mail.To.Add(new MailAddress(mailto));
-            mail.Subject = caption;
-            mail.Body = message;
-            if (!string.IsNullOrEmpty(attachFile))
-                mail.Attachments.Add(new Attachment(attachFile));
-            SmtpClient client = new SmtpClient();
-            client.Host = smtpServer;
-            client.Port = 5025;
-            client.EnableSsl = false;
-            client.Credentials = new NetworkCredential(from.Split('@')[0], password);
-            client.DeliveryMethod = SmtpDeliveryMethod.Network;
-            client.Send(mail);
-            mail.Dispose();
-            return true;
-        }
-        catch
-        {
-            return false;
-        }
-    }
-
-    public static void SaveXML_prt(Schemes_AOFOMS.sf_schema.FLK_P xml, string fn)
-    {
-        FileStream res = new System.IO.FileStream(fn, FileMode.Create);
-        System.Xml.Serialization.XmlSerializer writer =
-            new System.Xml.Serialization.XmlSerializer(typeof(Schemes_AOFOMS.sf_schema.FLK_P));
-        #region Перекодировка из UTF-8 в windows 1251
-        System.IO.StreamWriter file = new System.IO.StreamWriter(res, Encoding.GetEncoding(1251));
-        writer.Serialize(file, xml);
-        res.Close();
-        #endregion
-    }
-
-    public static void SaveXML_flk(Schemes_AOFOMS.sp_schema.FLK_P xml, string fn)
-    {
-        FileStream res = new System.IO.FileStream(fn, FileMode.Create);
-        System.Xml.Serialization.XmlSerializer writer =
-            new System.Xml.Serialization.XmlSerializer(typeof(Schemes_AOFOMS.sp_schema.FLK_P));
-        #region Перекодировка из UTF-8 в windows 1251
-        System.IO.StreamWriter file = new System.IO.StreamWriter(res, Encoding.GetEncoding(1251));
-        writer.Serialize(file, xml);
-        res.Close();
-        #endregion
-    }
-    public static void unpack(string mask, string source = @"u:\", string zipperPath = @"C:\Program Files\7-Zip\7z.exe")
-    {
-        bool find = false;
-        do
-        {
-            string[] files = null;
-            files = Directory.GetFiles(source, mask + ".ZIP");
-            files = files.Concat(Directory.GetFiles(source, mask + ".RAR")).ToArray();
-            files = files.Concat(Directory.GetFiles(source, mask + ".7z")).ToArray();
-            find = files.Count() > 0;
-            if (find)
-                foreach (string file in files)
-                {
-                    ProcessStartInfo processInfo;
-                    Process process;
-
-                    processInfo = new ProcessStartInfo(zipperPath,
-                                               @" e -y " + "\"" + file + "\"" + " -o" + "\"" + source + "\"");
-                    processInfo.CreateNoWindow = true;
-                    processInfo.UseShellExecute = false;
-                    // *** Redirect the output ***
-                    //processInfo.RedirectStandardError = false;
-                    //processInfo.RedirectStandardOutput = false;
-
-                    process = Process.Start(processInfo);
-                    //process.Threads.Sleep(1000);
-                    process.WaitForExit();
-
-                    int exitCode = process.ExitCode;
-                    process.Close();
-                    //MessageBox.Show("Swich " + exitCode.ToString());
-                    switch (exitCode)
-                    {
-                        case 0:
-                        case 1:
-                        default:
-                            File.Delete(file);
-                            break;
-                    }
-                }
-        }
-        while (find);
-    }
-
-    public static string execQuery_NewRequest(string connection_string, string filename, string mnemonics, string schemaname, string header)
-    /* выполнение запроса c возвратом первого значения
-     * при ошибке возвращает -1
-     */
-    {
-        string result = "-1"; //ошибка вставки
-        try
-        {
-            //0 - не вставлена запись, guid - успешно
-            SqlConnection connection = new SqlConnection(connection_string);
-            SqlCommand command = new SqlCommand();
-            command.CommandType = CommandType.Text;
-            command.Connection = connection;
-            command.CommandText = String.Format("EXEC eir.dbo.insert_newRequest '{0}','{1}','{2}','{3}'", filename, mnemonics, schemaname, header);
-            connection.Open();
-            SqlDataReader reader = command.ExecuteReader();
-            reader.Read();
-            result = reader[0].ToString();
-            connection.Close();
-        }
-        catch
-        {
-        }
-        return result;
-    }
-
-    public static bool moveFile_byPrefix(string file, string prefix)
-    //перемещение файла в папку по префикусу, определяется по месту файла
-    {
-        try
-        {
-            string destination = Path.Combine(Path.GetDirectoryName(file), prefix);
-            System.IO.Directory.CreateDirectory(destination);
-            File.Copy(file, Path.Combine(destination, Path.GetFileName(file)), true);
-            File.Delete(file);
-            return true;
-        }
-        catch
-        {
-            return false;
-        }
-    }
-
-    public static object find_HEADERtegInFile(string filename, ref string headerTxt)
-    //потиск тега HEADER
-    {
-        object obj = null;
-        using (FileStream fstream = File.OpenRead(filename))
-        {
-            byte[] array = new byte[2000/*fstream.Length*/];
-            fstream.Read(array, 0, array.Length);
-            //string textFromFile = Regex.Replace(System.Text.Encoding.Default.GetString(array), @"[ ]", ""); 
-            string textFromFile = System.Text.Encoding.Default.GetString(array);
-            int header_teg = textFromFile.IndexOf("<HEADER"); int header_teg_close = textFromFile.IndexOf("</HEADER>");
-            if (header_teg != -1 && header_teg_close != -1) //Есть заголовок
-            {
-                headerTxt = textFromFile.Substring(header_teg, header_teg_close - header_teg + 9);
-                XmlDocument xml_document = new XmlDocument();
-                xml_document.LoadXml(headerTxt);
-                System.Xml.Serialization.XmlSerializer reader = new System.Xml.Serialization.XmlSerializer(typeof(XML_Universal.HEADER_files));
-                StringReader stringReader = new StringReader(headerTxt);
-                try { obj = reader.Deserialize(stringReader); }
-                catch { };
-            }
-        }
-        return obj;
-
-    }
-
-    internal static List<string> execQuery_getListString(List<clsConnections> link_connections, ref string reglament_connections, string p1, string p2)
-    {
-        throw new NotImplementedException();
-    }
-    public static string getName_fromLibraies(ref List<clsConnections> link_connections, string nameField, string table, string fieldCode, string code)
-    //получение имени МО по коду
-    {
-        string result = null;
-        if (fieldCode != null)
-            result = clsLibrary.execQuery_getString(
-                 ref link_connections, null, "libraries",
-                 String.Format("SELECT top 1 {0} FROM {1} where {2} = '{3}'", nameField, table, fieldCode, code)
-                 );
-        if (result == null)
-            return string.Empty;
-        else
-            return result;
-    }
-    public static T DeserializeFrom<T>(this XmlElement xml) where T : new()
-    {
-        T xmlObject = new T();
-        try
-        {
-            XmlSerializer xmlSerializer = new XmlSerializer(typeof(T));
-            StringReader stringReader = new StringReader(xml.OuterXml);
-            xmlObject = (T)xmlSerializer.Deserialize(stringReader);
-        }
-        catch (Exception e)
-        {
-
-        }
-        return xmlObject;
-    }
-
-    public static string SerializeTo<T>(this T xmlObject, bool clear = false)
-    {
-        if (!clear)
-        {
-            XmlSerializer xmlSerializer = new XmlSerializer(typeof(T));
-            MemoryStream memoryStream = new MemoryStream();
-            XmlTextWriter xmlTextWriter = new XmlTextWriter(memoryStream, Encoding.UTF8);
-            xmlTextWriter.Formatting = Formatting.Indented;
-            xmlSerializer.Serialize(xmlTextWriter, xmlObject);
-            string output = Encoding.UTF8.GetString(memoryStream.ToArray());
-            string _byteOrderMarkUtf8 = Encoding.UTF8.GetString(Encoding.UTF8.GetPreamble());
-            if (output.StartsWith(_byteOrderMarkUtf8))
-            {
-                output = output.Remove(0, _byteOrderMarkUtf8.Length);
-            }
-            return output;
-        }
-        else
-        {
-            var emptyNamespaces = new XmlSerializerNamespaces(new[] { XmlQualifiedName.Empty });
-            var serializer = new XmlSerializer(xmlObject.GetType());
-            var settings = new XmlWriterSettings();
-            settings.Indent = true;
-            settings.OmitXmlDeclaration = true;
-            using (var stream = new StringWriter())
-            using (var writer = XmlWriter.Create(stream, settings))
-            {
-                serializer.Serialize(writer, xmlObject, emptyNamespaces);
-                return stream.ToString();
-            }
-        }
-    }
-
+    #endregion
 }
 
 public static partial class XmlHelper
