@@ -152,10 +152,12 @@ public static class clsLibrary
         { }
         return result;
     }
-    public static bool createFileTXT_FromList(List<string> list, string file, Encoding encoding = null, bool append = false)
+    public static bool createFileTXT_FromList(List<string> list, string file, Encoding encoding = null, bool rewrite = true, bool append = false)
     //создание текстового файла из текстового списка 
     {
-        if (File.Exists(file)) File.Delete(file);
+        if (File.Exists(file))
+            if (rewrite) File.Delete(file);
+            else return false;
         if (encoding == null) { encoding = Encoding.GetEncoding("Windows-1251"); }
         StreamWriter file_target = null;
         try
@@ -909,9 +911,7 @@ public static class clsLibrary
             return false;
         }
     }
-    public static bool execQuery(
-        ref List<clsConnections> link_connections, string reglament_connections, string database, string query, int commandTimeout_ = 0, int i = 0
-        )
+    public static bool execQuery(ref List<clsConnections> link_connections, string reglament_connections, string database, string query, int commandTimeout_ = 0, int i = 0)
     //выполнение запроса 
     {
         try
@@ -1066,8 +1066,7 @@ public static class clsLibrary
         return result;
     }
     public static string execQuery_getString(string connection_string, string query, int commandTimeout_ = 0)
-    /* 
-     */
+    /**/
     {
         string result = null;
         try
@@ -1091,6 +1090,66 @@ public static class clsLibrary
 
     //----- Postgres region
     #region postgres queries
+
+    public static bool execQuery_PGR(ref List<clsConnections> link_connections, string database, string query, int commandTimeout_ = 0, int i = 0)
+    //выполнение запроса 
+    {
+        try
+        {
+            NpgsqlConnection connection = new NpgsqlConnection(link_connections.Find(x => x.name == database).connectionString + ";database=" + database);
+            NpgsqlCommand command = new NpgsqlCommand();
+            command.CommandType = CommandType.Text;
+            command.Connection = connection;
+            command.CommandTimeout = commandTimeout_;
+            connection.Open();
+            command.CommandText = query;
+            command.ExecuteNonQuery();
+            connection.Close();
+            return true;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+    public static bool execQuery_PGR_insertList(string connection_string, string query, List<string> list, int limit_transaction = 1)
+    //выполнение запроса на вставку данных из списка
+    //возвращает false при ошибке
+    {
+        bool result = false;
+        if (list == null || list.Count() == 0) return result;
+        try
+        {
+            NpgsqlConnection connection = new NpgsqlConnection(connection_string);
+            NpgsqlCommand cmd = new NpgsqlCommand();
+            cmd.CommandType = CommandType.Text;
+            cmd.Connection = connection;
+            connection.Open();
+            int count = 0;
+            string values = string.Empty;
+            int count_list = list.Count();
+            for (int i = 0; i < count_list; i++)
+            {
+                ++count;
+                if (count != 1) values += ",";
+                values += " (" + list[i] + ")";
+                if (count == limit_transaction || i + 1 == count_list)
+                {
+                    cmd.CommandText = query + values;
+                    cmd.ExecuteNonQuery();
+                    values = string.Empty;
+                    count = 0;
+                }
+            }
+            connection.Close();
+            result = true;
+        }
+        catch
+        { }
+        return result;
+    }
+
+
     public static string execQuery_PGR_getString(string connection_string, string query, int commandTimeout_ = 0)
     {
         string result = null;
