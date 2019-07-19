@@ -244,7 +244,7 @@ public static class clsLibrary
     //Вносит имя файла в таблицу, должен быть уникальный
     {
         int id = 0;
-        System.Data.SqlClient.SqlConnection sqlConnection1 = new System.Data.SqlClient.SqlConnection("uid=sa;pwd=Cvbqwe2!;server=server-r;database=SRZ3_00;");
+        /*System.Data.SqlClient.SqlConnection sqlConnection1 = new System.Data.SqlClient.SqlConnection("uid=sa;pwd=Cvbqwe2!;server=server-r;database=SRZ3_00;");
         System.Data.SqlClient.SqlCommand cmd1 = new System.Data.SqlClient.SqlCommand();
         cmd1.CommandType = System.Data.CommandType.Text;
         cmd1.Connection = sqlConnection1;
@@ -257,7 +257,7 @@ public static class clsLibrary
             if (attempt != 0) id = rdr.GetInt32(0);
             else id = -1;
         }
-        sqlConnection1.Close();
+        sqlConnection1.Close();*/
         if (id == 0)
         {
             execQuery_insert(
@@ -845,11 +845,65 @@ public static class clsLibrary
         { }
         return result;
     }
-    public static bool execQuery_insertList_bool(string connection_string, string query, List<string[]> list, int limit_transaction = 1, string symbol = "")
+
+
+    public static bool execQuery_insertList_bool(string connection_string, string query, List<string[]> list, int limit_transaction = 1)
     //выполнение запроса на вставку данных из списка
     //возвращает false при ошибке
     {
         bool result = false;
+
+        int count = 0;
+        string values = string.Empty;
+        int count_row = list.Count();
+        string row_string;
+        
+
+        if (list == null || list.Count() == 0) return result;
+        try
+        {
+            int count_row_i = list[0].Count();
+            SqlConnection connection = new SqlConnection(connection_string);
+            connection.Open();
+            SqlCommand sqlCommand = connection.CreateCommand();
+            SqlTransaction sqlTransaction = connection.BeginTransaction("SampleTransaction");
+            sqlCommand.Connection = connection;
+            sqlCommand.Transaction = sqlTransaction;
+
+            for (int row = 0; row < count_row; ++row)
+            {
+                ++count;
+                if (count != 1) values += ",";
+                row_string = "";
+                for (int row_i = 0; row_i < count_row_i; ++row_i)
+                {
+                    list[row][row_i] = (string.IsNullOrEmpty(list[row][row_i])) ? "null" : string_Apostrophe(list[row][row_i]);
+                }
+                values += " (" + string.Join(",", list[row]) + ")";
+                if (count == limit_transaction || row + 1 == count_row)
+                {
+                    sqlCommand.CommandText = query + values;
+                    sqlCommand.ExecuteNonQuery();
+                    values = string.Empty;
+                    count = 0;
+                }
+            }
+            sqlTransaction.Commit();
+            connection.Close();
+            result = true;
+        }
+        catch (Exception ex)
+        {
+            string str = ex.Message;
+        }
+        return result;
+    }
+   /* public static string execQuery_insertList(string connection_string, string query, List<string[]> list, int limit_transaction = 1)
+    //выполнение запроса на вставку данных из списка
+    //возвращает false при ошибке
+    {
+        //bool result = false;
+        string result = "";
 
         int count = 0;
         string values = string.Empty;
@@ -868,21 +922,21 @@ public static class clsLibrary
             for (int row = 0; row < count_row; ++row)
             {
                 ++count;
-                if (count != 1) values += ",";
-                values += " (" + string.Join(",", list[row]) + ")";
+                if (count != 1) values += ","; 
+                 values += " (" + string.Join(",", list[row]) + ")";
                 if (count == limit_transaction || row + 1 == count_row)
                 {
-                    //cmd.CommandText = query + values;
-                    //cmd.ExecuteNonQuery();
                     sqlCommand.CommandText = query + values;
+                    result = sqlCommand.CommandText;
                     sqlCommand.ExecuteNonQuery();
                     values = string.Empty;
                     count = 0;
                 }
             }
+            
             sqlTransaction.Commit();
             connection.Close();
-            result = true;
+            //result = true;
         }
         catch (Exception ex)
         {
@@ -890,6 +944,7 @@ public static class clsLibrary
         }
         return result;
     }
+    */
     public static bool execQuery(string connection_string, string query, int commandTimeout_ = 0)
     //выполнение запроса 
     {
@@ -1235,6 +1290,57 @@ public static class clsLibrary
         return result;
     }
 
+    public static bool execQuery_PGR_updateList(ref List<clsConnections> link_connections, string reglament_connections, string database, ref List<string> list, int limit_transaction = 1, int commandTimeout_ = 0, int i = 0)
+    /* Postgres
+     * Обновление данных списком запросов
+     * В списке получаем готовые запросы на обновление
+     */
+    {
+        bool result = false;
+
+        int count = 0;
+        string values = string.Empty;
+        int count_row = list.Count();
+
+        if (list == null || list.Count() == 0) return result;
+        try
+        {
+            string connection_name = "";
+            if (reglament_connections == null || reglament_connections == String.Empty)
+                connection_name = database;
+            else
+                get_stringSplitPos(ref connection_name, reglament_connections, ';', i);
+            NpgsqlConnection connection = new NpgsqlConnection(link_connections.Find(x => x.name == connection_name).connectionString + ";database=" + database);
+            connection.Open();
+            //NpgsqlCommand command = new NpgsqlCommand(query, connection);
+            NpgsqlCommand sqlCommand = connection.CreateCommand();
+            NpgsqlTransaction sqlTransaction = connection.BeginTransaction(IsolationLevel.Chaos);
+            sqlCommand.Connection = connection;
+            sqlCommand.CommandTimeout = commandTimeout_;
+            sqlCommand.Transaction = sqlTransaction;
+
+            for (int row = 0; row < count_row; ++row)
+            {
+                ++count;
+                values += list[row] + ";";
+                if (count == limit_transaction || row + 1 == count_row)
+                {
+                    sqlCommand.CommandText = values;
+                    sqlCommand.ExecuteNonQuery();
+                    values = string.Empty;
+                    count = 0;
+                }
+            }
+            sqlTransaction.Commit();
+            connection.Close();
+            result = true;
+        }
+        catch (Exception ex)
+        {
+            string str = ex.Message;
+        }
+        return result;
+    }
     public static int execQuery_PGR_getInt(ref List<clsConnections> link_connections, string reglament_connections, string database, string query, int commandTimeout_ = 0, char symbol = ';', int i = 0)
     /* POSTGRES
      * выполнение запроса c возвратом первого значения
@@ -1361,6 +1467,67 @@ public static class clsLibrary
             return false;
         }
     }
+
+
+    public static bool execQuery_PGR_insertList(ref List<clsConnections> link_connections, string database, string query, List<string> list, int limit_transaction = 1)
+    //выполнение запроса на вставку данных из списка
+    //возвращает false при ошибке
+    {
+        bool result = false;
+        if (list == null || list.Count() == 0) return result;
+        try
+        {
+            NpgsqlConnection connection = new NpgsqlConnection(link_connections.Find(x => x.name == database).connectionString + ";database=" + database);
+            NpgsqlCommand command = new NpgsqlCommand();
+            command.CommandType = CommandType.Text;
+            command.Connection = connection;
+            connection.Open();
+            int count = 0;
+            string values = string.Empty;
+            int count_list = list.Count();
+            for (int i = 0; i < count_list; i++)
+            {
+                ++count;
+                if (count != 1) values += ",";
+                values += " (" + list[i] + ")";
+                if (count == limit_transaction || i + 1 == count_list)
+                {
+                    command.CommandText = query + values;
+                    command.ExecuteNonQuery();
+                    values = string.Empty;
+                    count = 0;
+                }
+            }
+            connection.Close();
+            result = true;
+        }
+        catch
+        { }
+        return result;
+    }
+    public static string execQuery_PGR_getString(ref List<clsConnections> link_connections, string database, string query, int commandTimeout_ = 0)
+    {
+        string result = null;
+        try
+        {
+            NpgsqlConnection connection = new NpgsqlConnection(link_connections.Find(x => x.name == database).connectionString + ";database=" + database);
+            NpgsqlCommand command = new NpgsqlCommand(query, connection);
+            command.CommandType = CommandType.Text;
+            command.Connection = connection;
+            command.CommandTimeout = commandTimeout_;
+            connection.Open();
+            NpgsqlDataReader reader = command.ExecuteReader();
+            reader.Read();
+            result = reader[0].ToString();
+            connection.Close();
+        }
+        catch (Exception e) { }
+        return result;
+    }
+
+
+
+
     #endregion
 }
 
