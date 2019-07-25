@@ -1726,6 +1726,32 @@ public static class clsLibrary
         return result;
     }
 
+    public static string execQuery_PGR_getString(ref List<clsConnections> link_connections, string reglament_connections, string database, string query, int commandTimeout_ = 0, int i = 0)
+    {
+        string result = null;
+        NpgsqlConnection connection = null;
+        try
+        {
+            string connection_name = "";
+            if (reglament_connections == null || reglament_connections == String.Empty)
+                connection_name = database;
+            else
+                get_stringSplitPos(ref connection_name, reglament_connections, ';', i);
+            connection = new NpgsqlConnection(link_connections.Find(x => x.name == connection_name).connectionString + ";database=" + database);
+            NpgsqlCommand command = new NpgsqlCommand(query, connection);
+            command.CommandType = CommandType.Text;
+            command.Connection = connection;
+            command.CommandTimeout = commandTimeout_;
+            connection.Open();
+            NpgsqlDataReader reader = command.ExecuteReader();
+            reader.Read();
+            result = reader[0].ToString();
+        }
+        catch { }
+        if (connection.State == ConnectionState.Open) connection.Close();
+        connection.Dispose();
+        return result;
+    }
 
 
 
