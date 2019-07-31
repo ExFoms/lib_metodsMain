@@ -1411,9 +1411,7 @@ public static class clsLibrary
             reader.Read();
             result = reader[0].ToString();
         }
-        catch(Exception e)
-        {            result = e.Message;
-            }
+        catch {/* Должно оставться result = null*/}
         finally
         {
             if (connection.State == ConnectionState.Open) connection.Close();
