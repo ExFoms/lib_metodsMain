@@ -12,6 +12,8 @@ using System.Diagnostics;
 using System.Xml;
 using System.Xml.Serialization;
 using System.Xml.Schema;
+using System.Transactions;
+
 public static class clsLibrary
 {
     public class Id_row
@@ -1139,9 +1141,6 @@ public static class clsLibrary
         return result;
     }
     public static string execQuery_getString(ref List<clsConnections> link_connections, string reglament_connections, string database, string query, int i = 0, int commandTimeout_ = 0)
-    /* выполнение запроса c возвратом первого значения
-     * при ошибке возвращает -1
-     */
     {
         string result = null;
         try
@@ -1202,6 +1201,34 @@ public static class clsLibrary
     //----- Postgres region
     #region postgres queries
 
+    public static bool execQuery_PGR1(ref List<clsConnections> link_connections, string database, string query, int commandTimeout_ = 0, int i = 0)
+    //выполнение запроса 
+    {
+        bool result = false;
+        //using (TransactionScope scope = new TransactionScope()) {
+            using (NpgsqlConnection connection = new NpgsqlConnection(link_connections.Find(x => x.name == database).connectionString + ";database=" + database))
+            {
+            
+                try
+                {
+                    NpgsqlCommand command = new NpgsqlCommand();
+                    command.CommandType = CommandType.Text;
+                    command.Connection = connection;
+                    command.CommandTimeout = commandTimeout_;
+                    connection.Open();
+                    command.CommandText = query;
+                NpgsqlTransaction transaction = connection.BeginTransaction();
+                command.Transaction = transaction;
+                command.ExecuteNonQuery();
+                transaction.Commit();
+                
+                    result = true;
+                }
+                catch { }
+            }
+        //    scope.Complete(); }
+        return result;
+    }
     public static bool execQuery_PGR(ref List<clsConnections> link_connections, string database, string query, int commandTimeout_ = 0, int i = 0)
     //выполнение запроса 
     {
@@ -1924,9 +1951,7 @@ public static partial class XmlHelper
             //We call xs.Serialize and pass in our custom 
             //XmlSerializerNamespaces object.
             xs.Serialize(xw, xmlObject, ns);
-
             xw.Flush();
-
             outString = sb.ToString();
         }
         catch { }
@@ -1940,7 +1965,46 @@ public static partial class XmlHelper
         return outString;
     }
 
+    public static bool saveXML_toFile1(ref XmlElement xmlElement, string file, Encoding encoding = null) // string messageId, string prefix)
+    {
+        bool result = false;
+        FileStream fileStream = new FileStream(file, FileMode.Create);
+        StreamWriter streamWriter = new StreamWriter(fileStream, (encoding == null) ? Encoding.GetEncoding(1251) : encoding);
+        try
+        {
+            //if (File.Exists(file)) File.Delete(file);
+            streamWriter.Write(xmlElement.InnerXml);
+            streamWriter.Close();
+            result = true;
+        }
+        catch { }
+        fileStream.Close();
+        streamWriter.Close();
+        return result;
+    }
+    public static bool saveXML_toFile2<T>(object xmlElement, string file, Encoding encoding = null)
+    {
+        bool result = false;
+        FileStream fileStream = null;
+        StreamWriter streamWriter = null;
+        try
+        {
+            fileStream = new FileStream(file, FileMode.Create);
+            streamWriter = new StreamWriter(fileStream, (encoding == null) ? Encoding.GetEncoding(1251) : encoding);
+            XmlSerializer writer = new XmlSerializer(typeof(T));
+            XmlSerializerNamespaces nameSpaces = new XmlSerializerNamespaces();
+            writer.Serialize(streamWriter, xmlElement);
+            result = true;
+        }
+        catch { }
+        if (fileStream != null)
+        {
 
+            streamWriter.Close();
+            fileStream.Close();
+        }
+        return result;
+    }
 }
 
 public class sf_schema
